@@ -1,88 +1,168 @@
 """
-Color map in Gaepsi
+Color map in Gaepsi2
 
-We do not deligate to matplotlib's color map in this module
-
-N and NL can produce some large arrays (2x original)
-
-the only colormap is CoolWarm
-
-CoolWarm(color, brightness) returns rgb in u1.
-color and brightness shall be normalized to 0, 1; 
-out of bound numbers are satuated (numpy.interp)
-
+Provides efficient colormaps for large images.
 """
-import numpy
+from typing import Optional, Tuple, Union, Any
+import numpy as np
+from numpy.typing import NDArray
 
-def N(a, range=None):
-    """ normalize array, so that max -> 1, min-> 0
-        max, min given by range
+class Lazy:
+    """A descriptor that calculates its value only once per instance.
 
-        range can be a scalar (min = max - scalar) 
-        range can be a tuple (the min and the max)
-        range can be None (min max from data)
+    The result is cached as an instance variable with the same name as the
+    function that calculated it.
+    """
+    def __init__(self, calculate_function):
+        self._calculate = calculate_function
 
-        nan is skipped.
+    def __get__(self, obj, _=None):
+        if obj is None:
+            return self
+        value = self._calculate(obj)
+        setattr(obj, self._calculate.__name__, value)
+        return value
+
+def N(a: NDArray, range: Optional[Union[float, Tuple[float, float]]] = None) -> NDArray:
+    """Normalize array, so that max -> 1, min-> 0
+
+    Parameters
+    ----------
+    a : array_like
+        The input array to normalize
+    range : float or tuple of floats, optional
+        If a scalar: min = max - scalar
+        If a tuple: (min, max)
+        If None: min, max from data
+
+    Returns
+    -------
+    array_like
+        Normalized array with values between 0 and 1
+
+    Notes
+    -----
+    NaN values are skipped during normalization.
     """
     if range is not None:
-        if numpy.isscalar(range):
-            amax = numpy.nanmax(a)
-            amin = amax + range
-        #    print 'scalar range', range
+        if np.isscalar(range):
+            amax = np.nanmax(a)
+            amin = amax - range
         else:
             amin, amax = range
     else:
-        amin = numpy.nanmin(a)
-        amax = numpy.nanmax(a)
-    a = a - amin
-    a /= (amax - amin)
-    return a
+        amin = np.nanmin(a)
+        amax = np.nanmax(a)
+    result = a - amin
+    result /= (amax - amin)
+    return result
 
-def NL(a, range=None):
-    """ normalize array in logscale, so that max -> 1, min-> 0
-        max, min given by range
+def NL(a: NDArray, range: Optional[Union[float, Tuple[float, float]]] = None) -> NDArray:
+    """Normalize array in logscale, so that max -> 1, min-> 0
 
-        range can be a scalar (min = max - scalar) 
-        range can be a tuple (the min and the max)
-        range can be None (min max from data)
+    Parameters
+    ----------
+    a : array_like
+        The input array to normalize
+    range : float or tuple of floats, optional
+        If a scalar: min = max - scalar
+        If a tuple: (min, max)
+        If None: min, max from data
 
-        nan is skipped.
+    Returns
+    -------
+    array_like
+        Normalized array with values between 0 and 1 in log scale
+
+    Notes
+    -----
+    NaN values are skipped during normalization.
+    Negative infinity values (from log(0)) are converted to NaN.
     """
-    a = numpy.log10(a)
-    a[numpy.isneginf(a)] = numpy.nan
-    return N(a, range)
+    a_log = np.log10(a)
+    a_log[np.isneginf(a_log)] = np.nan
+    return N(a_log, range)
 
-class Colormap(object):
-    def __init__(self, map):
+class Colormap:
+    """A class to efficiently apply colormaps to large images.
+
+    Parameters
+    ----------
+    map : array_like
+        The colormap as an Nx3 array of RGB values
+
+    Methods
+    -------
+    __call__(data, brightness=1.0)
+        Apply the colormap to the data
+    from_mpl(mpl)
+        Create a Colormap from a matplotlib colormap
+    """
+
+    def __init__(self, map: NDArray):
+        """Initialize with a colormap array.
+
+        Parameters
+        ----------
+        map : array_like
+            The colormap as an Nx3 array of RGB values
+        """
         self.map = map
         assert map.shape[1] == 3
-        self.x = numpy.linspace(0, 1.0, len(map), endpoint=True)
+        self.x = np.linspace(0, 1.0, len(map), endpoint=True)
 
     @classmethod
-    def from_mpl(self, mpl):
-        return Colormap(mpl(numpy.linspace(0, 1.0, 8192, endpoint=True))[:, :3])
+    def from_mpl(cls, mpl: Any) -> 'Colormap':
+        """Create a Colormap from a matplotlib colormap.
 
-    def __call__(self, data, brightness=1.0):
-        value = numpy.empty(list(data.shape) + [4], 'u1')
+        Parameters
+        ----------
+        mpl : matplotlib.colors.Colormap
+            A matplotlib colormap
+
+        Returns
+        -------
+        Colormap
+            A Gaepsi2 Colormap
+        """
+        return cls(mpl(np.linspace(0, 1.0, 8192, endpoint=True))[:, :3])
+
+    def __call__(self, data: NDArray, brightness: float = 1.0) -> NDArray:
+        """Apply the colormap to the data.
+
+        Parameters
+        ----------
+        data : array_like
+            The data to colorize (should be normalized to [0, 1])
+        brightness : float, optional
+            Brightness factor to apply to colors
+
+        Returns
+        -------
+        array_like
+            RGBA array of colors for each data point
+        """
+        value = np.empty(list(data.shape) + [4], 'u1')
         data2 = data.copy()
-        data2[numpy.isnan(data)] = 0.
+        data2[np.isnan(data)] = 0.
         for i in range(3):
-            tmp = brightness * numpy.interp(data, self.x, self.map[:, i]) * 255
-            numpy.clip(tmp, 0, 255, out=tmp)
-            value[..., i] = numpy.uint8(tmp)
+            tmp = brightness * np.interp(data, self.x, self.map[:, i]) * 255
+            np.clip(tmp, 0, 255, out=tmp)
+            value[..., i] = np.uint8(tmp)
         value[..., 3] = 255
         return value
 
 def setup():
+    """Set up global colormap instances."""
     global CoolWarm
     global CoolWarmR
     global Hot
     global HotR
     from io import StringIO
-    CoolWarm = Colormap(numpy.loadtxt(StringIO(coolwarm_data)))
-    CoolWarmR = Colormap(numpy.loadtxt(StringIO(coolwarm_data))[::-1])
-    Hot = Colormap(numpy.loadtxt(StringIO(hot_data)))
-    HotR = Colormap(numpy.loadtxt(StringIO(hot_data))[::-1])
+    CoolWarm = Colormap(np.loadtxt(StringIO(coolwarm_data)))
+    CoolWarmR = Colormap(np.loadtxt(StringIO(coolwarm_data))[::-1])
+    Hot = Colormap(np.loadtxt(StringIO(hot_data)))
+    HotR = Colormap(np.loadtxt(StringIO(hot_data))[::-1])
 
 coolwarm_data = """
 2.298057000000000016e-01 2.987179660000000014e-01 7.536831529999999946e-01
