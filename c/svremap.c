@@ -81,12 +81,12 @@ int svremap_init(SVRemap * r, int remap[3][3]) {
  *
  * */
 
-static double svremap_test(SVRemap * r, double x[3], double y[3], int I[3]) {
+static double svremap_test(SVRemap * r, double x[3], double y[3], int indices[3]) {
     double v1[4];
     double v2[4];
     int i;
     for(i = 0; i < 3; i ++) {
-        v1[i] = x[i] + I[i];
+        v1[i] = x[i] + indices[i];
     }
     v1[3] = 1.0;
     gtmat_apply(r->T, v1, v2);
@@ -123,8 +123,8 @@ static void svremap_bounds(SVRemap * r, int Imin[3], int Imax[3]) {
         }
     }
 }
-double svremap_apply(SVRemap * r, double x[3], double y[3], int I[3]) {
-    if(svremap_test(r, x, y, I) == 0.0) return 0.0;
+double svremap_apply(SVRemap * r, double x[3], double y[3], int indices[3]) {
+    if(svremap_test(r, x, y, indices) == 0.0) return 0.0;
     int Imax[3] = {0}, Imin[3] = {0}, Ibest[3]; 
     double ybest[3];
     double bestbadness = 99.99; 
@@ -132,30 +132,30 @@ double svremap_apply(SVRemap * r, double x[3], double y[3], int I[3]) {
     svremap_bounds(r, Imin, Imax);
 
     for(a = 0; a < 3; a++) {
-        I[a] = Imin[a];
+        indices[a] = Imin[a];
     }
     int done = 0;
     while(!done) {
-        double badness = svremap_test(r, x, y, I);
+        double badness = svremap_test(r, x, y, indices);
         if(badness == 0.0) return 0.0;
         if(badness < bestbadness) {
             for(a = 0; a < 3; a++) {
-                Ibest[a] = I[a];
+                Ibest[a] = indices[a];
                 ybest[a] = y[a];
             }
             bestbadness = badness;
         }
 
-        I[0] ++;
+        indices[0] ++;
         for(a = 0; a < 3; a++) {
-            if(I[a] != Imax[a] + 1) continue;
+            if(indices[a] != Imax[a] + 1) continue;
             if(a + 1 == 3) done = 1;
-            I[a + 1] ++;
-            I[a] = Imin[a];
+            indices[a + 1] ++;
+            indices[a] = Imin[a];
         }
     }
     for(a = 0; a < 3; a++) {
-        I[a] = Ibest[a];
+        indices[a] = Ibest[a];
         y[a] = ybest[a];
     }
     return bestbadness;

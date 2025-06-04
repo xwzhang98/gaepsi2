@@ -24,7 +24,7 @@ typedef struct {
 } SVRemap;
 
 int svremap_init(SVRemap * r, int remap[3][3]);
-double svremap_apply(SVRemap * r, double x[3], double y[3], int I[3]);
+double svremap_apply(SVRemap * r, double x[3], double y[3], int indices[3]);
 
 
 /* spline.c */
