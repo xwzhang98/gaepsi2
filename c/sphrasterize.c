@@ -81,8 +81,8 @@ gsph_rasterize(GSPHImage * image, GSPHKernel sphkernel,
     if(sml < 1.0) {
         /* really shall use CIC here fix it later */
         /* if sml is too small (less than 0.707) bits becomes zero */
-        x = pos[1];
-        y = pos[0];
+        x = pos[0];
+        y = pos[1];
         if (x < 0) return;
         if (y < 0) return;
         if (x >= size[1]) return;
@@ -106,15 +106,15 @@ gsph_rasterize(GSPHImage * image, GSPHKernel sphkernel,
             if (max[k] >= size[k]) max[k] = size[k] - 1;
         }
         if(sml < 60) {
-            for(y = pos[0] - sml; y <= pos[0] + sml; y++) {
-            for(x = pos[1] - sml; x <= pos[1] + sml; x++) {
-                double dx = x - pos[1];
-                double dy = y - pos[0];
+            for(y = pos[1] - sml; y <= pos[1] + sml; y++) {
+            for(x = pos[0] - sml; x <= pos[0] + sml; x++) {
+                double dx = x - pos[0];
+                double dy = y - pos[1];
                 double r = sqrt(dx * dx + dy * dy) / (sml );
                 r = sphkernel(r);
                 bit += r;
-                if(x >= min[1] && x <= max[1] 
-                        && y >= min[0] && y <= max[0]) {
+                if(x >= min[0] && x <= max[0]
+                        && y >= min[1] && y <= max[1]) {
                     save[s] = r;
                     s++;
                 }
@@ -130,8 +130,8 @@ gsph_rasterize(GSPHImage * image, GSPHKernel sphkernel,
         double sml2 = sml * sml;
         //printf("area %g %g %g %g\n", sml, bit, sml2, bit / sml2);
         s = 0;
-        for(y = min[0]; y <= max[0]; y++) {
-        for(x = min[1]; x <= max[1]; x++) {
+        for(y = min[1]; y <= max[1]; y++) {
+        for(x = min[0]; x <= max[0]; x++) {
             double w;
             if(usekernel) {
                 w = save[s] * bit;
@@ -145,7 +145,7 @@ gsph_rasterize(GSPHImage * image, GSPHKernel sphkernel,
                 for(i = 0; i < nc; i ++) {
                     tmp[i] = mvalue[i] * w;
                 }
-                gsph_image_write(image, y, x, tmp);
+                gsph_image_write(image, x, y, tmp);
             }
         }
         }
