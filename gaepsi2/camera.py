@@ -296,7 +296,7 @@ def lookat(pos: Tuple[float, float, float],
 
 def apply(matrix: cameramatrix,
           pos: np.ndarray,
-          np: Optional[int] = None) -> np.ndarray:
+          num_process: Optional[int] = None) -> np.ndarray:
     """Apply camera transformation to data coordinates.
 
     Parameters
@@ -305,7 +305,7 @@ def apply(matrix: cameramatrix,
         Camera matrix from matrix()
     pos : array_like
         Data coordinates, shape (..., 3)
-    np : int, optional
+    num_process : int, optional
         Number of processes for parallel computation, or None for auto
 
     Returns
@@ -338,7 +338,7 @@ def apply(matrix: cameramatrix,
         tmpout[..., :] = tmp[..., :3] / tmp[..., 3][..., None]
 
     # Use sharedmem for parallel processing
-    with sharedmem.MapReduce(np=np) as pool:
+    with sharedmem.MapReduce(np=num_process) as pool:
         pool.map(work, range(0, len(pos), chunksize))
 
     return shmout  # Return the transformed coordinates
@@ -362,7 +362,7 @@ def clip(xc: np.ndarray) -> np.ndarray:
 
 def todevice(xc: np.ndarray,
              extent: Union[Tuple[float, float], Tuple[float, float, float, float]],
-             np: Optional[int] = None) -> np.ndarray:
+             num_process: Optional[int] = None) -> np.ndarray:
     """Convert clipping coordinates to device coordinates.
 
     Parameters
@@ -371,7 +371,7 @@ def todevice(xc: np.ndarray,
         Clipping coordinates, shape (..., 3)
     extent : tuple
         Either (width, height) or (left, right, bottom, top)
-    np : int, optional
+    num_process : int, optional
         Number of processes for parallel computation, or None for auto
 
     Returns
@@ -408,69 +408,57 @@ def todevice(xc: np.ndarray,
         out[i:i+chunksize] = tmp[:, :2]
 
     # Use sharedmem for parallel processing
-    with sharedmem.MapReduce(np=np) as pool:
+    with sharedmem.MapReduce(np=num_process) as pool:
         pool.map(work, range(0, len(xc), chunksize))
 
     return out  # Return the device coordinates
 
-def data_to_device(matrix: cameramatrix,
-                  pos: np.ndarray,
-                  sml: np.ndarray,
-                  extent: Union[Tuple[float, float], Tuple[float, float, float, float]],
-                  apply_clip: bool = False,
-                  np: Optional[int] = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Transform positions and smoothing lengths from data to device coordinates.
 
-    Parameters
-    ----------
-    matrix : cameramatrix
-        Camera matrix from matrix()
-    pos : array_like
-        Data coordinates, shape (..., 3)
-    sml : array_like
-        Smoothing lengths in data coordinates
-    extent : tuple
-        Either (width, height) or (left, right, bottom, top)
-    apply_clip : bool, optional
-        If True, points outside the viewing frustum are clipped
-    np : int, optional
-        Number of processes for parallel computation, or None for auto
+def data_to_device_fixed(matrix, pos, sml, extent, apply_clip=False, num_process=None):
+    """ Transform pos and smoothing length to device coordinate,
+        with finite differentiation - FIXED VERSION
 
-    Returns
-    -------
-    xd : array_like
-        Device coordinates, shape (..., 2)
-    smld : array_like
-        Smoothing lengths in device coordinates
-    mask : array_like
-        Boolean mask, True for points inside the viewing frustum
+        Parameters
+        ----------
+        matrix: camera matrix
+        pos : array_like
+            position in data coordinate
+        sml : array_like
+            smoothing in data coordinate
+        extent : 2-tuple or 4-tuple
+            (see todevice)
+        apply_clip : bool
+            if True, the clipping will be applied
+
+        Returns
+        -------
+        xd, smld, clip : array_like
+            position and sml in device coordinate, and clipping flag.
+            xd and smld are clipped by clip if apply_clip is True.
     """
-    # Verify the input matrix is of the correct type
     assert isinstance(matrix, cameramatrix)
 
-    # Apply the camera transformation to positions slightly perturbed by smoothing length
-    # This allows us to estimate the size of a particle in screen space
-    xc = apply(matrix, pos + sml[:, None] * matrix.side, np=np)
+    # Transform center positions
+    pos_center_clip = apply(matrix, pos, num_process=num_process)
 
-    # Compute clipping mask to identify particles inside the viewing frustum
-    m = clip(xc)
+    # Transform positions offset by smoothing length in camera's side direction
+    pos_offset_clip = apply(matrix, pos + sml[:, None] * matrix.side, num_process=num_process)
 
-    # If apply_clip is True, filter out particles outside the viewing frustum
+    # Apply clipping to center positions
+    clip_mask = clip(pos_center_clip)
+
     if apply_clip:
-        xc = xc[m]
-        pos = pos[m]
-        sml = sml[m]
+        pos_center_clip = pos_center_clip[clip_mask]
+        pos_offset_clip = pos_offset_clip[clip_mask]
+        original_indices = np.where(clip_mask)[0]
+    else:
+        original_indices = np.arange(len(pos))
 
-    # Convert clip coordinates to device coordinates
-    xd = todevice(xc, extent, np=np)
+    # Convert to device coordinates
+    pos_center_device = todevice(pos_center_clip, extent, num_process=num_process)
+    pos_offset_device = todevice(pos_offset_clip, extent, num_process=num_process)
 
-    # Calculate another point at the edge of each particle
-    # This is used to determine the particle size in device coordinates
-    xc1 = apply(matrix, pos + sml[:, None] * matrix.side, np=np)
-    xd1 = todevice(xc1, extent, np=np)
+    # Compute device-space smoothing length
+    smld = ((pos_offset_device - pos_center_device) ** 2).sum(axis=-1) ** 0.5
 
-    # Calculate the smoothing length in device coordinates
-    # This is the distance between the particle center and edge in screen space
-    smld = np.sqrt(np.sum((xd1 - xd) ** 2, axis=-1))
-
-    return xd, smld, m  # Return device coordinates, device smoothing lengths, and clipping mask
+    return pos_center_device, smld, clip_mask
