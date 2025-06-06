@@ -126,3 +126,6 @@ cython_debug/
 # OS
 .DS_Store
 Thumbs.db
+
+# Test output plots
+test_plots/

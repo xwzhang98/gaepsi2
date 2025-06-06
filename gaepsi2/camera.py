@@ -23,6 +23,14 @@
 import numpy
 import sharedmem
 
+# Global variables for multiprocessing workers
+_worker_pos = None
+_worker_matrix = None
+_worker_shmout = None
+_worker_xc = None
+_worker_out = None
+_worker_extent_params = None
+
 class projectionmatrix(numpy.ndarray):
     pass
 
@@ -229,6 +237,17 @@ def lookat(pos, target, up):
     m2.side = side
     return m2
 
+def _apply_worker(i):
+    """Worker function for apply() - must be at module level for pickling"""
+    chunksize = 1024 * 32
+    tmppos = _worker_pos[i:chunksize+i]
+    tmpout = _worker_shmout[i:chunksize+i]
+    tmp = numpy.empty((len(tmppos), 4), dtype='f8')
+    tmp[..., 3] = 1.0
+    tmp[..., :3] = tmppos
+    tmp = numpy.dot(tmp, _worker_matrix.T)
+    tmpout[..., :] = tmp[..., :3] / tmp[..., 3][..., None]
+
 def apply(matrix, pos, np=None):
     """ 
         apply a camera matrix to data coordinates
@@ -251,23 +270,17 @@ def apply(matrix, pos, np=None):
     """
     assert isinstance(matrix, cameramatrix)
 
-    shmout = sharedmem.empty_like(pos)
+    global _worker_pos, _worker_matrix, _worker_shmout
+    
+    _worker_pos = pos
+    _worker_matrix = matrix
+    _worker_shmout = sharedmem.empty_like(pos)
     chunksize = 1024 * 32
-
-    def work(i):
-        tmppos = pos[i:chunksize+i]
-        tmpout = shmout[i:chunksize+i]
-        tmp = numpy.empty((len(tmppos), 4), dtype='f8')
-        tmp[..., 3] = 1.0
-        tmp[..., :3] = tmppos
-        tmp = numpy.dot(tmp, matrix.T)
-
-        tmpout[..., :] = tmp[..., :3] / tmp[..., 3][..., None]
         
     with sharedmem.MapReduce(np=np) as pool:
-        pool.map(work, range(0, len(pos), chunksize))
+        pool.map(_apply_worker, range(0, len(pos), chunksize))
 
-    return shmout
+    return _worker_shmout
 
 def clip(xc):
     """ Compute the clipping mask from clipping coordinates.
@@ -285,6 +298,18 @@ def clip(xc):
     """
 
     return ((xc >= -1) & (xc <= 1)).all(axis=-1)
+
+def _todevice_worker(i):
+    """Worker function for todevice() - must be at module level for pickling"""
+    chunksize = 1024 * 32
+    l, r, b, t = _worker_extent_params
+    tmp = (_worker_xc[i:i+chunksize] + 1.0)
+    tmp *= 0.5
+    tmp[..., 1] *= (t - b)
+    tmp[..., 1] += b
+    tmp[..., 0] *= (r - l)
+    tmp[..., 0] += l
+    _worker_out[i:i+chunksize] = tmp[:, :2]
 
 def todevice(xc, extent, np=None):
     """ Convert clipping coordinate to device coordinate.
@@ -309,26 +334,23 @@ def todevice(xc, extent, np=None):
             of xd are useful.
 
     """
+    global _worker_xc, _worker_out, _worker_extent_params
+    
     if len(extent) == 2:
         r, t = extent
         l, b = 0, 0
     else:
         l, r, b, t = extent
 
+    _worker_xc = xc
+    _worker_out = sharedmem.empty((len(xc), 2))
+    _worker_extent_params = (l, r, b, t)
+    
     chunksize = 1024 * 32
-    out = sharedmem.empty((len(xc), 2))
-    def work(i):
-        tmp = (xc[i:i+chunksize] + 1.0)
-        tmp *= 0.5
-        tmp[..., 1] *= (t - b)
-        tmp[..., 1] += b
-        tmp[..., 0] *= (r - l)
-        tmp[..., 0] += l
-        out[i:i+chunksize] = tmp[:, :2]
     with sharedmem.MapReduce(np=np) as pool:
-        pool.map(work, range(0, len(xc), chunksize))
+        pool.map(_todevice_worker, range(0, len(xc), chunksize))
 
-    return out
+    return _worker_out
 
 def todevice_shape(xc, shape, np=None):
     """ Convert clipping coordinate to device coordinate using image shape.

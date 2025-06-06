@@ -37,21 +37,29 @@ pip install -e .
 import numpy as np
 from gaepsi2 import painter
 
-# Create particles
+# Create particles in world coordinates
 n_particles = 1000
-pos = np.random.uniform(0, 64, (n_particles, 2))  # 2D positions
-sml = np.full(n_particles, 2.0)  # smoothing lengths
+world_size = 64.0
+pos_world = np.random.uniform(0, world_size, (n_particles, 2))  # 2D positions
+sml_world = np.full(n_particles, 2.0)  # smoothing lengths in world units
 density = np.random.uniform(0.5, 2.0, n_particles)  # particle properties
 
-# Paint to image
+# Convert from world coordinates to device (pixel) coordinates
 image_shape = (256, 256)
-result = painter.paint(pos, sml, [density], image_shape)
+scale = image_shape[0] / world_size  # pixels per world unit
+pos_device = pos_world * scale
+sml_device = sml_world * scale
+
+# Paint to image
+result = painter.paint(pos_device, sml_device, [density], image_shape)
 density_image = result[0]
 
 # For visualization, remember to transpose
 import matplotlib.pyplot as plt
-plt.imshow(density_image.T, origin='lower', cmap='viridis')
+plt.imshow(density_image.T, origin='lower', extent=[0, world_size, 0, world_size], cmap='viridis')
 plt.colorbar(label='Density')
+plt.xlabel('X (world units)')
+plt.ylabel('Y (world units)')
 plt.show()
 ```
 
