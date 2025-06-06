@@ -14,7 +14,7 @@
 
    apply: apply the transformation to a 3 d position vector,
 
-   the devide coordinate is [-1, 1]. 
+   the device coordinate is [-1, 1]. 
 
    data_to_device transforms pos and sml together.
 
@@ -63,21 +63,33 @@ def ortho(near, far, extent):
         
         Parameters
         ----------
-        extent : tuple of 4
-            left, right, top, bottom in data coordinate
-
         near : float
             location of the near field
 
         far : float
             location of the far field
+            
+        extent : tuple of 4
+            left, right, bottom, top in data coordinate
 
         Returns
         -------
         A projectionmatrix.
 
     """
+    # Input validation
+    if near >= far:
+        raise ValueError("near must be less than far")
+    
+    if not isinstance(extent, (list, tuple)) or len(extent) != 4:
+        raise ValueError("extent must be a 4-tuple (left, right, bottom, top)")
+    
     l, r, b, t = extent
+    
+    if l >= r:
+        raise ValueError("left must be less than right in extent")
+    if b >= t:
+        raise ValueError("bottom must be less than top in extent")
     ortho = numpy.zeros((4,4))
     ortho[0, 0] = 2.0 / (r - l)
     ortho[1, 1] = 2.0 / (t - b)
@@ -104,12 +116,12 @@ def fov2extent(fov, aspect, D):
 def extent2fov(extent, D):
     """ Convert extent to FOV parameters """
     l, r, b, t = extent
-    aspect = (l - r) /(b - t)
+    aspect = (r - l) / (t - b)
     fov = numpy.arctan2((t - b), D) * 2
     return fov, aspect
 
 def persp(near, far, fov, aspect):
-    """ An perspective camera projection.
+    """ A perspective camera projection.
         
         Parameters
         ----------
@@ -123,8 +135,8 @@ def persp(near, far, fov, aspect):
             Field of View angle in radians.
 
         aspect : float
-            aspect ratio. It shall be the same as
-            the device shape[0] / shape[1] for squared pixels.
+            aspect ratio. It should be the same as
+            the device shape[0] / shape[1] for square pixels.
 
         Returns
         -------
@@ -132,6 +144,18 @@ def persp(near, far, fov, aspect):
 
         perspective dot modelview
     """
+    # Input validation
+    if near >= far:
+        raise ValueError("near must be less than far")
+    
+    if near <= 0:
+        raise ValueError("near must be positive")
+    
+    if fov <= 0 or fov >= numpy.pi:
+        raise ValueError("fov must be between 0 and pi radians")
+    
+    if aspect <= 0:
+        raise ValueError("aspect ratio must be positive")
     
     # distance cancels out
     l, r, b, t = fov2extent(fov, aspect, 1)
@@ -215,13 +239,13 @@ def apply(matrix, pos, np=None):
            created by :func:`matrix`
 
         pos : array_like
-           data cooridnates
+           data coordinates
 
         Returns
         -------
         clip_pos : array_like
            The position in the clip coordinate.
-           The fustrum of the camera is in
+           The frustum of the camera is in
            (-1, 1) x (-1, 1) x (-1, 1)
 
     """
@@ -267,20 +291,20 @@ def todevice(xc, extent, np=None):
     
         Parameters
         ----------
-        extent : 2-tuple or 4-tuple
-           The extent of the device cooridnate.
-           (E[0], E[1]) or (S[0], E[0], S[1], E[1]).
-           in first case S[0], and S[1] are 0.
-           
         xc : array_like (... ,3)
             Clipping coordinates. Only the first two columns
             of xc are used.
+            
+        extent : 2-tuple or 4-tuple
+           The extent of the device coordinate.
+           (E[0], E[1]) or (S[0], E[0], S[1], E[1]).
+           In first case S[0] and S[1] are 0.
 
         Returns
         -------
         xd : array_like (..., 2)
             data in device coordinate.
-            For data in the fustrum, it shall be
+            For data in the frustum, it shall be
             between S and E. Only the first two columns
             of xd are useful.
 
@@ -305,6 +329,47 @@ def todevice(xc, extent, np=None):
         pool.map(work, range(0, len(xc), chunksize))
 
     return out
+
+def todevice_shape(xc, shape, np=None):
+    """ Convert clipping coordinate to device coordinate using image shape.
+    
+        This is a more intuitive version of todevice() that uses image shape
+        instead of extent. When users specify shape=(height, width), the 
+        device coordinates will range from [0, width-1] and [0, height-1].
+        
+        Parameters
+        ----------
+        xc : array_like (... ,3)
+            Clipping coordinates. Only the first two columns
+            of xc are used.
+            
+        shape : 2-tuple
+            The shape of the output image as (height, width).
+            Device coordinates will range from [0, width-1] and [0, height-1].
+
+        Returns
+        -------
+        xd : array_like (..., 2)
+            Device coordinates as (x, y) where x is in [0, width-1] 
+            and y is in [0, height-1]. For data in the frustum.
+
+    """
+    # Input validation
+    xc = numpy.asarray(xc)
+    if xc.ndim < 2 or xc.shape[-1] < 2:
+        raise ValueError("xc must have at least 2 columns in the last dimension")
+    
+    if not isinstance(shape, (list, tuple)) or len(shape) != 2:
+        raise ValueError("shape must be a 2-tuple (height, width)")
+    
+    height, width = shape
+    if not (isinstance(height, int) and isinstance(width, int)):
+        raise ValueError("shape must contain integers")
+    
+    if height <= 0 or width <= 0:
+        raise ValueError("shape must contain positive values")
+    
+    return todevice(xc, (width-1, height-1), np=np)
 
 def data_to_device(matrix, pos, sml, extent, apply_clip=False, np=None):
     """ Transform pos and smoothing length in device coordinate,

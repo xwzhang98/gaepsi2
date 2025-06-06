@@ -1,0 +1,78 @@
+[build-system]
+requires = ["setuptools>=64", "wheel", "Cython>=0.29", "numpy>=1.20"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gaepsi2"
+dynamic = ["version"]
+description = "gaepsi2. SPH visualization."
+readme = "README.rst"
+license = {text = "BSD-2-Clause"}
+authors = [
+    {name = "Yu Feng", email = "rainwoodman@gmail.com"}
+]
+maintainers = [
+    {name = "Yu Feng", email = "rainwoodman@gmail.com"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Astronomy",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
+keywords = ["SPH", "visualization", "astronomy", "simulation"]
+requires-python = ">=3.8"
+dependencies = [
+    "cython>=0.29",
+    "numpy>=1.20",
+    "sharedmem",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "black",
+    "isort",
+    "flake8",
+]
+mpi = [
+    "mpi4py",
+]
+scientific = [
+    "scipy",
+    "matplotlib",
+]
+
+[project.urls]
+Homepage = "https://github.com/rainwoodman/gaepsi2"
+Repository = "https://github.com/rainwoodman/gaepsi2"
+Issues = "https://github.com/rainwoodman/gaepsi2/issues"
+
+[tool.setuptools.dynamic]
+version = {attr = "gaepsi2.version.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["gaepsi2*"]
+
+[tool.setuptools.package-data]
+gaepsi2 = ["*.h"]
+
+[tool.cython-lint]
+max-line-length = 88
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+
+[tool.isort]
+profile = "black"
+line_length = 88

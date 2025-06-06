@@ -7,44 +7,69 @@ def paint(pos, sml, data, shape, mask=None, np=0):
 
         Parameters
         ----------
-
         pos : array_like
-          (..., >2) position of particles. Only two first
-          column is used. In device coordinate
+          (..., >=2) position of particles. Only the first two
+          columns are used. In device coordinate
+
+        sml : array_like
+          smoothing length (half of effective size).
+          In device coordinate; only correct for orthographic
+          projections
 
         data : array_like
           (Nc, ...) or (...). Weight to use for painting.
-          Nc channels will be produces on the device.
-          if the array is 1d, Nc = 1
+          Nc channels will be produced on the device.
+          If the array is 1d, Nc = 1
         
-        sml : array_like
-          smoothing length (half of effective size).
-          In device coordinate; only correct in isotropic
-          cameras
-
         shape : list, tuple
-          (w[0], w[1]) the size of the device.
-          shall enclose pos[..., 0] and pos[..., 1]
+          (height, width) the size of the output image.
+          Should enclose pos[..., 0] and pos[..., 1]
 
-        mask : array_like, boolean
+        mask : array_like, boolean, optional
           If provided, elements with False will not be painted.
 
-        np : int
-          number of multiprocessing. 0 for single-processing.
+        np : int, optional
+          Number of processes for multiprocessing. 0 for single-processing.
           None for all available cores.
 
         Returns
         -------
-        image: array_like
-           (Nc, shape[0], shape[1])
+        image: list of array_like
+           List of (height, width) arrays, one for each data channel
 
         Notes
         -----
-        Remember to transpose for imshow and pmesh to correct put x horizontaly.
+        Remember to transpose for imshow and pcolormesh to correctly put x horizontally.
     """
+    # Input validation
+    pos = numpy.asarray(pos)
+    sml = numpy.asarray(sml)
+    
+    if pos.ndim != 2 or pos.shape[1] < 2:
+        raise ValueError("pos must be a 2D array with at least 2 columns")
+    
+    if len(sml) != len(pos):
+        raise ValueError("sml must have same length as pos")
+    
+    if not isinstance(shape, (list, tuple)) or len(shape) != 2:
+        raise ValueError("shape must be a 2-tuple (height, width)")
+    
+    if not all(isinstance(s, int) and s > 0 for s in shape):
+        raise ValueError("shape must contain positive integers")
+    
+    if mask is not None:
+        mask = numpy.asarray(mask, dtype=bool)
+        if len(mask) != len(pos):
+            raise ValueError("mask must have same length as pos")
 
     if len(numpy.shape(data)) == 1:
         data = [data]
+    
+    # Validate data arrays
+    for i, d in enumerate(data):
+        d = numpy.asarray(d)
+        if len(d) != len(pos):
+            raise ValueError(f"data[{i}] must have same length as pos")
 
     with sharedmem.MapReduce(np=np) as pool:
         if pool.np > 0: nbuf = pool.np
