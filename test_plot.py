@@ -523,6 +523,166 @@ def test_todevice_shape_comparison():
     return fig, "07_todevice_comparison.png"
 
 
+def test_periodic_boundary():
+    """Test periodic boundary conditions in SPH painting."""
+    print("Testing periodic boundary conditions...")
+    
+    # Create uniform grid of particles with proper spacing
+    np.random.seed(42)
+    grid_size = 16  # Good density for clear visualization
+    # Place particles with half-spacing buffer from edges to avoid aliasing
+    spacing = 64.0 / grid_size
+    x = np.linspace(spacing/2, 64 - spacing/2, grid_size)
+    y = np.linspace(spacing/2, 64 - spacing/2, grid_size)
+    xx, yy = np.meshgrid(x, y)
+    
+    pos_world = np.column_stack([xx.flatten(), yy.flatten()])
+    n_particles = len(pos_world)
+    
+    # Large smoothing length but reasonable relative to spacing
+    sml_world = np.full(n_particles, 8.0)  # 2x particle spacing
+    density = np.full(n_particles, 1.0)
+    
+    # Image setup
+    image_shape = (64, 64)
+    world_size = 64.0
+    
+    # Already in device coordinates (0-64)
+    pos_device = pos_world.copy()
+    sml_device = sml_world.copy()
+    
+    # Paint without periodic boundaries
+    result_nonperiodic = painter.paint(
+        pos_device, sml_device, [density], image_shape, periodic=False
+    )
+    image_nonperiodic = result_nonperiodic[0]
+    
+    # Paint with periodic boundaries
+    result_periodic = painter.paint(
+        pos_device, sml_device, [density], image_shape, periodic=True
+    )
+    image_periodic = result_periodic[0]
+    
+    # Create visualization
+    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+    
+    # Row 1: Non-periodic
+    axes[0, 0].scatter(pos_world[:, 0], pos_world[:, 1], 
+                      c='green', s=150, alpha=0.6, edgecolors='black', linewidth=0.5)
+    # Draw circles to show smoothing length for corner and edge particles
+    corner_edge_indices = []
+    for i in range(n_particles):
+        x, y = pos_world[i]
+        if x < 5 or x > 59 or y < 5 or y > 59:  # Near edges
+            corner_edge_indices.append(i)
+    
+    # Show smoothing circles for a few edge/corner particles
+    for i in corner_edge_indices[::len(corner_edge_indices)//4]:
+        circle = plt.Circle((pos_world[i, 0], pos_world[i, 1]), sml_world[i], 
+                          fill=False, color='red', alpha=0.5, linestyle='--', linewidth=2)
+        axes[0, 0].add_patch(circle)
+    axes[0, 0].set_xlim(-5, 69)
+    axes[0, 0].set_ylim(-5, 69)
+    axes[0, 0].set_title('Particles (Non-Periodic)')
+    axes[0, 0].set_xlabel('X Position')
+    axes[0, 0].set_ylabel('Y Position')
+    axes[0, 0].grid(True, alpha=0.3)
+    axes[0, 0].set_aspect('equal')
+    
+    # Use better colormap range
+    vmin = np.min([image_nonperiodic.min(), image_periodic.min()])
+    vmax = np.max([image_nonperiodic.max(), image_periodic.max()])
+    
+    im1 = axes[0, 1].imshow(image_nonperiodic.T, origin='lower', 
+                           extent=[0, 64, 0, 64], cmap='hot', vmin=vmin, vmax=vmax)
+    axes[0, 1].set_title('SPH Painted (Non-Periodic)')
+    axes[0, 1].set_xlabel('X Position')
+    axes[0, 1].set_ylabel('Y Position')
+    plt.colorbar(im1, ax=axes[0, 1], label='Density')
+    
+    # Show difference image
+    diff_image = image_periodic - image_nonperiodic
+    im_diff = axes[0, 2].imshow(diff_image.T, origin='lower', 
+                               extent=[0, 64, 0, 64], cmap='RdBu_r',
+                               vmin=-np.abs(diff_image).max(), 
+                               vmax=np.abs(diff_image).max())
+    axes[0, 2].set_title('Difference (Periodic - Non-Periodic)')
+    axes[0, 2].set_xlabel('X Position')
+    axes[0, 2].set_ylabel('Y Position')
+    plt.colorbar(im_diff, ax=axes[0, 2], label='Density Difference')
+    # Add contour lines at edges
+    axes[0, 2].axvline(x=5, color='yellow', linestyle='--', alpha=0.5)
+    axes[0, 2].axvline(x=59, color='yellow', linestyle='--', alpha=0.5)
+    axes[0, 2].axhline(y=5, color='yellow', linestyle='--', alpha=0.5)
+    axes[0, 2].axhline(y=59, color='yellow', linestyle='--', alpha=0.5)
+    
+    # Row 2: Periodic
+    axes[1, 0].scatter(pos_world[:, 0], pos_world[:, 1], 
+                      c='green', s=150, alpha=0.6, edgecolors='black', linewidth=0.5)
+    # Show wrapped particles in lighter color
+    for dx in [-64, 64]:
+        for dy in [-64, 64]:
+            if dx != 0 or dy != 0:
+                axes[1, 0].scatter(pos_world[:, 0] + dx, pos_world[:, 1] + dy, 
+                                 c='lightgreen', s=100, alpha=0.3, marker='s',
+                                 edgecolors='gray', linewidth=0.5)
+    axes[1, 0].set_xlim(-5, 69)
+    axes[1, 0].set_ylim(-5, 69)
+    axes[1, 0].set_title('Particles (Periodic)')
+    axes[1, 0].set_xlabel('X Position')
+    axes[1, 0].set_ylabel('Y Position')
+    axes[1, 0].grid(True, alpha=0.3)
+    axes[1, 0].set_aspect('equal')
+    
+    im2 = axes[1, 1].imshow(image_periodic.T, origin='lower', 
+                           extent=[0, 64, 0, 64], cmap='hot', vmin=vmin, vmax=vmax)
+    axes[1, 1].set_title('SPH Painted (Periodic)')
+    axes[1, 1].set_xlabel('X Position')
+    axes[1, 1].set_ylabel('Y Position')
+    plt.colorbar(im2, ax=axes[1, 1], label='Density')
+    
+    # Show line profiles comparing edge vs center
+    edge_y = 1  # Very close to edge
+    center_y = 32
+    
+    axes[1, 2].plot(image_nonperiodic[edge_y, :], label=f'Non-Periodic Edge (y={edge_y})', 
+                    linewidth=2, color='red', alpha=0.7)
+    axes[1, 2].plot(image_nonperiodic[center_y, :], label=f'Non-Periodic Center (y={center_y})', 
+                    linewidth=2, color='darkred', linestyle='--', alpha=0.7)
+    axes[1, 2].plot(image_periodic[edge_y, :], label=f'Periodic Edge (y={edge_y})', 
+                    linewidth=2, color='blue')
+    axes[1, 2].plot(image_periodic[center_y, :], label=f'Periodic Center (y={center_y})', 
+                    linewidth=2, color='darkblue', linestyle='--')
+    
+    axes[1, 2].set_title('Edge vs Center Brightness Comparison')
+    axes[1, 2].set_xlabel('X Position')
+    axes[1, 2].set_ylabel('Density')
+    axes[1, 2].legend(fontsize=8)
+    axes[1, 2].grid(True, alpha=0.3)
+    
+    # Add annotations showing the difference
+    max_np_edge = np.max(image_nonperiodic[edge_y, :])
+    max_np_center = np.max(image_nonperiodic[center_y, :])
+    max_p_edge = np.max(image_periodic[edge_y, :])
+    max_p_center = np.max(image_periodic[center_y, :])
+    
+    axes[1, 2].text(0.02, 0.95, f'Non-Periodic: Edge/Center = {max_np_edge/max_np_center:.2f}',
+                    transform=axes[1, 2].transAxes, fontsize=9, verticalalignment='top',
+                    bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+    axes[1, 2].text(0.02, 0.85, f'Periodic: Edge/Center = {max_p_edge/max_p_center:.2f}',
+                    transform=axes[1, 2].transAxes, fontsize=9, verticalalignment='top',
+                    bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.5))
+    
+    # Add text annotations
+    fig.text(0.5, 0.95, 'Periodic Boundary Conditions: Uniform Grid Test', 
+             ha='center', fontsize=16, fontweight='bold')
+    fig.text(0.5, 0.92, 'With periodic=True, edge brightness matches center brightness for uniform distribution', 
+             ha='center', fontsize=12)
+    
+    plt.tight_layout(rect=[0, 0, 1, 0.9])
+    return fig, "08_periodic_boundary.png"
+
+
 def main():
     """Run all test visualizations."""
     print("Gaepsi2 Comprehensive Test and Visualization")
@@ -545,6 +705,7 @@ def main():
         test_cosmological_visualization,
         test_multiple_datasets,
         test_todevice_shape_comparison,
+        test_periodic_boundary,
     ]
     
     # Run all tests and save plots

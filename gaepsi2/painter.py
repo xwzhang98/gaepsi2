@@ -2,7 +2,7 @@ from . import _painter
 import sharedmem
 import numpy
 
-def paint(pos, sml, data, shape, mask=None, np=0):
+def paint(pos, sml, data, shape, mask=None, np=0, periodic=False):
     """ Use SPH kernel to splat particles to an image.
 
         Parameters
@@ -31,6 +31,10 @@ def paint(pos, sml, data, shape, mask=None, np=0):
         np : int, optional
           Number of processes for multiprocessing. 0 for single-processing.
           None for all available cores.
+
+        periodic : bool, optional
+          If True, apply periodic boundary conditions. Particles near edges
+          will contribute to opposite sides of the image. Default is False.
 
         Returns
         -------
@@ -70,6 +74,55 @@ def paint(pos, sml, data, shape, mask=None, np=0):
         d = numpy.asarray(d)
         if len(d) != len(pos):
             raise ValueError(f"data[{i}] must have same length as pos")
+    
+    # Handle periodic boundary conditions
+    if periodic:
+        # Replicate particles that are near boundaries
+        pos_list = [pos]
+        sml_list = [sml]
+        data_list = [[d] for d in data]
+        mask_list = [mask] if mask is not None else [None]
+        
+        # Check which particles need replication
+        width, height = shape[1], shape[0]
+        
+        # For each shift in the 3x3 grid (excluding center)
+        for shift_x in [-1, 0, 1]:
+            for shift_y in [-1, 0, 1]:
+                if shift_x == 0 and shift_y == 0:
+                    continue  # Skip the original position
+                
+                # Shift positions by full image dimensions
+                dx = shift_x * width
+                dy = shift_y * height
+                
+                # Create shifted positions for ALL particles
+                shifted_pos = pos.copy()
+                shifted_pos[:, 0] += dx
+                shifted_pos[:, 1] += dy
+                
+                # Check which shifted particles could paint into the image
+                # A particle can paint if its center +/- sml overlaps with [0, width] x [0, height]
+                x_overlap = (shifted_pos[:, 0] + sml > 0) & (shifted_pos[:, 0] - sml < width)
+                y_overlap = (shifted_pos[:, 1] + sml > 0) & (shifted_pos[:, 1] - sml < height)
+                paint_mask = x_overlap & y_overlap
+                
+                if numpy.any(paint_mask):
+                    pos_list.append(shifted_pos[paint_mask])
+                    sml_list.append(sml[paint_mask])
+                    
+                    for i, d in enumerate(data):
+                        data_list[i].append(d[paint_mask])
+                    
+                    if mask is not None:
+                        mask_list.append(mask[paint_mask])
+        
+        # Concatenate all replicated particles
+        pos = numpy.concatenate(pos_list)
+        sml = numpy.concatenate(sml_list)
+        data = [numpy.concatenate(d_list) for d_list in data_list]
+        if mask is not None:
+            mask = numpy.concatenate(mask_list)
 
     with sharedmem.MapReduce(np=np) as pool:
         if pool.np > 0: nbuf = pool.np
