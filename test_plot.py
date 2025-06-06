@@ -32,20 +32,25 @@ def test_basic_painting():
     # Create simple particle distribution
     np.random.seed(42)
     n_particles = 50
-    pos = np.random.uniform(0, 20, (n_particles, 2))
-    sml = np.random.uniform(0.5, 2.0, n_particles)
+    pos_world = np.random.uniform(0, 20, (n_particles, 2))
+    sml_world = np.random.uniform(0.5, 2.0, n_particles)
     density = np.random.uniform(0.1, 2.0, n_particles)
     
-    # Paint to image
+    # Set up camera to map world coordinates [0,20] to device coordinates
     image_shape = (64, 64)
-    result = painter.paint(pos, sml, [density], image_shape)
+    # Map world coordinates (0,20) to device coordinates (0,64)
+    pos_device = pos_world * (image_shape[0] / 20.0)
+    sml_device = sml_world * (image_shape[0] / 20.0)
+    
+    # Paint to image
+    result = painter.paint(pos_device, sml_device, [density], image_shape)
     density_image = result[0]
     
     # Create plot
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
     
     # Plot particle positions
-    ax1.scatter(pos[:, 0], pos[:, 1], c=density, s=sml*20, alpha=0.7, cmap='viridis')
+    ax1.scatter(pos_world[:, 0], pos_world[:, 1], c=density, s=sml_world*20, alpha=0.7, cmap='viridis')
     ax1.set_xlim(0, 20)
     ax1.set_ylim(0, 20)
     ax1.set_title('Original Particle Positions')
@@ -377,10 +382,15 @@ def test_multiple_datasets():
     velocity = np.random.normal(0, 100, n_particles)
     metallicity = np.random.uniform(0.1, 2.0, n_particles)
     
-    # Paint all quantities at once
+    # Convert world coordinates to device coordinates
+    # Particles are in range [0,40], map to device coordinates [0,128]
     image_shape = (128, 128)
+    pos_device = pos * (image_shape[0] / 40.0)
+    sml_device = sml * (image_shape[0] / 40.0)
+    
+    # Paint all quantities at once
     images = painter.paint(
-        pos, sml, 
+        pos_device, sml_device, 
         [density, temperature, velocity, metallicity], 
         image_shape
     )

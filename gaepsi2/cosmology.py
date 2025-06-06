@@ -1,5 +1,5 @@
 import numpy
-from scipy.integrate import romberg
+from scipy.integrate import quad
 from scipy.interpolate import InterpolatedUnivariateSpline
 
 # we keep cosmology.py relatively independent. Lazy is copied from
@@ -64,7 +64,7 @@ class Cosmology(object):
       a = numpy.exp(loga)
       return 1 / self.Ea(a) * a ** -1 # dz = - 1 / a dloga
     y = numpy.array(
-        [romberg(kernel, loga, 0, vec_func=True, divmax=10) for loga in logx])
+        [quad(kernel, loga, 0)[0] for loga in logx])
     def func(xval,
             intp=interp1d(logx, y, kind=5)):
       return intp(numpy.log(xval))
@@ -137,7 +137,7 @@ class Cosmology(object):
       return (a * self.Ea(a)) ** -3 * a # da = a * d loga
   
     y = self.Ea(x) * numpy.array(
-                 [ romberg(kernel, logx.min(), loga, vec_func=True) 
+                 [ quad(kernel, logx.min(), loga)[0] 
                    for loga in logx])
 
     def func(x, nu=0, intp=interp1d(logx, y, 
