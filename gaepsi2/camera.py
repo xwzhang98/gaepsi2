@@ -22,6 +22,16 @@
 
 import numpy
 import sharedmem
+import multiprocessing
+import sys
+
+# Set multiprocessing method to fork on macOS to avoid pickling issues
+if sys.platform == 'darwin' and multiprocessing.get_start_method(allow_none=True) != 'fork':
+    try:
+        multiprocessing.set_start_method('fork', force=True)
+    except RuntimeError:
+        # Already set, ignore
+        pass
 
 # Global variables for multiprocessing workers
 _worker_pos = None

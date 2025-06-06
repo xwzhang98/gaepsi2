@@ -1,6 +1,16 @@
 from . import _painter
 import sharedmem
 import numpy
+import multiprocessing
+import sys
+
+# Set multiprocessing method to fork on macOS to avoid pickling issues
+if sys.platform == 'darwin' and multiprocessing.get_start_method(allow_none=True) != 'fork':
+    try:
+        multiprocessing.set_start_method('fork', force=True)
+    except RuntimeError:
+        # Already set, ignore
+        pass
 
 def paint(pos, sml, data, shape, mask=None, np=0, periodic=False):
     """ Use SPH kernel to splat particles to an image.

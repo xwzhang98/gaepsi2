@@ -239,7 +239,8 @@ def test_color_mapping():
     cbar2.set_label('Normalized Value')
     
     temp_colored = color.CoolWarm(temp_norm_linear)
-    axes[0, 2].imshow(temp_colored.T, origin='lower')
+    # Use only RGB channels (drop alpha channel for matplotlib)
+    axes[0, 2].imshow(temp_colored[..., :3].T, origin='lower')
     axes[0, 2].set_title('CoolWarm Colormap Applied')
     axes[0, 2].set_xlabel('X Position')
     axes[0, 2].set_ylabel('Y Position')
@@ -261,7 +262,8 @@ def test_color_mapping():
     cbar4.set_label('Log Normalized Value')
     
     density_colored = color.Hot(density_norm_log)
-    axes[1, 2].imshow(density_colored.T, origin='lower')
+    # Use only RGB channels (drop alpha channel for matplotlib)
+    axes[1, 2].imshow(density_colored[..., :3].T, origin='lower')
     axes[1, 2].set_title('Hot Colormap Applied')
     axes[1, 2].set_xlabel('X Position')
     axes[1, 2].set_ylabel('Y Position')
