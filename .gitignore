@@ -129,3 +129,4 @@ Thumbs.db
 
 # Test output plots
 test_plots/
+test_plot.py
